@@ -1,0 +1,6 @@
+{
+  "projects": {
+    "default": "showstatsdebug",
+    "showstatsprod": "showstats-e6ff1"
+  }
+}
