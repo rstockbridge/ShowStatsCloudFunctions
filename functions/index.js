@@ -10,11 +10,11 @@ exports.deleteUserAuthentication = functions.https.onCall((data, context) => {
     return admin.auth().deleteUser(user)
         .then(() => {
             console.log("User authentication record deleted");
-            return Promise.resolve();
+            return;
         })
         .catch((error) => { 
-            console.error("Error while trying to delete the user: ", error)
-            return Promise.reject(error);
+            console.error("Error while trying to delete the user: ", error);
+            return;
         });    
 });
 
@@ -23,39 +23,14 @@ exports.deleteUserAuthentication = functions.https.onCall((data, context) => {
  * Manually run the task here https://console.cloud.google.com/cloudscheduler
  */
 exports.deleteUserData = functions.pubsub.schedule('every day 00:00').onRun(async context => {
-    // Fetch all user details.
+	// Fetch all user details.
     const activeUsers = await getActiveUsers();
 
-    admin.firestore().collection("users").get()
-        .then(snapshot => {
-            snapshot.forEach(doc => {
-                const docRef = doc.ref;
-                var deleteFlag = true;
-
-                activeUsers.forEach((activeUser, index) => {
-                    // at most one active user will match this document
-                    if (activeUser.uid === docRef.id) {
-                        deleteFlag = false;
-                    }
-                });
-
-                if(deleteFlag) {
-                    deleteDocument(docRef);
-                }
-            });
-            return Promise.resolve();
-        })
-        .catch(error => {
-            console.log("Error getting documents: ", error);
-            return Promise.reject(error);
-        });
+    return admin.firestore().collection("users").get()
+        	.then(snapshot => {
+    			return Promise.all(getDeletePromises(snapshot, activeUsers));
+        	});
 });
-
-function logActiveUsers(activeUsers) {
-    activeUsers.forEach((item, index) => {
-        console.log(item.uid, index);
-    });
-}
 
 async function getActiveUsers(users = [], nextPageToken) {
     const result = await admin.auth().listUsers(1000, nextPageToken);
@@ -72,14 +47,36 @@ async function getActiveUsers(users = [], nextPageToken) {
     return users;
 }
 
-function deleteDocument(docRef) {
-    docRef.delete()
-        .then(() => {
-            console.log("Document ", docRef.id, " successfully deleted!");
-            return Promise.resolve();
-        })
-        .catch((error) => {
-            console.error("Error removing document ", docRef.id, ": ", error);
-            return Promise.reject(error);
-        })
+function getDeletePromises(snapshot, activeUsers) {
+	var docRefsToDelete = new Array();
+
+     snapshot.forEach(doc => {
+        const docRef = doc.ref;
+        var deleteFlag = true;
+
+        activeUsers.forEach((activeUser, index) => {
+            // at most one active user will match this document
+            if (activeUser.uid === docRef.id) {
+                deleteFlag = false;
+            }
+        });
+
+        if(deleteFlag) {
+            docRefsToDelete.push(docRef);
+        }
+    });
+
+    const deletePromises = docRefsToDelete.map((docRef) => {
+  		return docRef.delete()
+        	        .then(() => {
+                        console.log("Document ", docRef.id, " successfully deleted!");
+                        return;
+                    })
+                    .catch((error) => {
+                        console.error("Error removing document ", docRef.id, ": ", error);
+                        return; // don't pass on error to allow other deletePromises to succeed
+                    });
+                });
+
+    return deletePromises;
 }
